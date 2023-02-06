@@ -434,13 +434,14 @@ while w_counter <= (SELECT MAX(aa.f_ref) from 48_multispc.tb_multispc_input_uniq
 		,a.period
 		,a.target
 		,a.value
+		,NULL AS 'Mean'
 		,a.denominator
 		,a.extra_1
 		,a.extra_2
 		,a.extra_3
 		,a.extra_4
 		,a.extra_5
-		,NULL,NULL,NULL,NULL,NULL,0,0,0,0,0,0,a.orange_is
+		,NULL,NULL,NULL,NULL,0,0,0,0,0,0,a.orange_is
 		FROM 48_multispc.tb_multispc_input a
 		WHERE 1=1
 		AND a.grp_ref = w_counter
@@ -516,7 +517,10 @@ while w_counter <= (SELECT MAX(aa.f_ref) from 48_multispc.tb_multispc_input_uniq
 		WHERE 1=1 
 		and o.grp_ref = w_counter
 		AND o.ind = (SELECT MAX(o3.ind) from 48_multispc.tb_multispc_output o3 WHERE o3.grp_ref = w_counter) 
-		);
+		)
+	WHERE 1=1 
+	and c.grp_ref = w_counter
+	;
 
 
 	UPDATE 48_multispc.tb_multispc_output d
@@ -559,7 +563,31 @@ create procedure 48_multispc.sp_multispc_main(in InValue float,InPosition int)
 begin
 -- -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--- This script removes duplicates from the input dataset
+-- Deduplicate core fields
+DELETE a.*
+FROM 48_multispc.tb_multispc_input a
+JOIN (
+	SELECT 
+	aa.field_1
+	,aa.field_2
+	,aa.field_3
+	,aa.field_4
+	,aa.field_5
+	,aa.period
+	,COUNT(*)
+	FROM 48_multispc.tb_multispc_input aa
+	GROUP by
+	aa.field_1
+	,aa.field_2
+	,aa.field_3
+	,aa.field_4
+	,aa.field_5
+	,aa.period
+	HAVING COUNT(*) >1
+) aa on a.field_1 = aa.field_1 AND a.field_2 <=> aa.field_2 AND a.field_3 <=> aa.field_3 AND a.field_4 <=> aa.field_4 AND a.field_5 <=> aa.field_5 AND a.period <=> aa.period;
+
+
+-- This script removes groups with less than 12 items as not suitable for SPC.
 DELETE a.*
 FROM 48_multispc.tb_multispc_input a
 JOIN (
@@ -584,29 +612,29 @@ JOIN (
 -- organise the data to number each unique grouping
 TRUNCATE TABLE 48_multispc.tb_multispc_input_unique;
 INSERT INTO 48_multispc.tb_multispc_input_unique (
-SELECT 
-a.field_1
-,a.field_2
-,a.field_3
-,a.field_4
-,a.field_5
--- ,ROW_NUMBER() OVER (PARTITION BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5 ORDER BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5 ASC) 
-,DENSE_RANK() OVER (ORDER BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5) AS 'myrank'
-FROM 48_multispc.tb_multispc_input a
-WHERE 1=1
-AND a.field_1 IS NOT null
-GROUP BY
-a.field_1
-,a.field_2
-,a.field_3
-,a.field_4
-,a.field_5
+	SELECT 
+	a.field_1
+	,a.field_2
+	,a.field_3
+	,a.field_4
+	,a.field_5
+	-- ,ROW_NUMBER() OVER (PARTITION BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5 ORDER BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5 ASC) 
+	,DENSE_RANK() OVER (ORDER BY a.field_1, a.field_2, a.field_3, a.field_4, a.field_5) AS 'myrank'
+	FROM 48_multispc.tb_multispc_input a
+	WHERE 1=1
+	AND a.field_1 IS NOT null
+	GROUP BY
+	a.field_1
+	,a.field_2
+	,a.field_3
+	,a.field_4
+	,a.field_5
 );
 
 
 -- join the grouped data back to get in the index, use a null safe join <=>
 UPDATE 48_multispc.tb_multispc_input a
-JOIN 48_multispc.tb_multispc_input_unique b ON b.field_1 <=> a.field_1 AND b.field_2 <=> a.field_2 AND b.field_3 <=> a.field_3 AND b.field_4 <=> a.field_4 AND b.field_5 <=> a.field_5 
+JOIN 48_multispc.tb_multispc_input_unique b ON b.field_1 <=> a.field_1 AND b.field_2 <=> a.field_2 AND b.field_3 <=> a.field_3 AND b.field_4 <=> a.field_4 AND b.field_5 <=> a.field_5
 SET grp_ref = b.f_ref
 WHERE 1=1;
 
